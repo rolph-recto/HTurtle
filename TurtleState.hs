@@ -27,6 +27,7 @@ data TurtleState = TurtleState {
                   , ty :: Float -- turtle y coord
                   , tsize :: Float -- turtle size
                   , tangle :: Float -- turtle angle (0 is straight up)
+                  , tshow :: Bool -- draw the turtle
                   , pen :: Bool
                   , penColor :: Color
                   , shapes :: [CanvasShape]

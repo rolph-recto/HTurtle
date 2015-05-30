@@ -42,9 +42,14 @@ drawTurtle = do
 -- draw everything!
 drawCanvas :: State TurtleState Picture
 drawCanvas = do
+  tstate <- get
   shapes <- drawCanvasShapes
-  turtle <- drawTurtle
-  return $ Pictures (shapes ++ turtle)
+  if tshow tstate
+  then do
+    turtle <- drawTurtle
+    return $ Pictures (shapes ++ turtle)
+  else
+    return $ Pictures shapes
 
 -- drawing callback to playIO
 drawTurtleState :: TurtleState -> IO Picture
