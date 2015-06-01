@@ -10,45 +10,51 @@ import TurtleExpr
 import TurtleCmd
 import TurtleDraw
 
-
 runCmd :: TurtleState -> TurtleExpr -> IO TurtleState
-runCmd tstate cmd  = do
+runCmd tstate cmd = do
   let (log, tstate') = runState (execTurtleCmd cmd) tstate
   putStrLn log
   return tstate'
+
+runCmdStr :: TurtleState -> String -> IO TurtleState
+runCmdStr tstate cmdstr = do
+  let parseResult = parseTurtle cmdstr
+  case parseResult of
+    Left parseErr -> do
+      print parseErr
+      return tstate
+    Right cmd -> do
+      let (log, tstate') = runState (execTurtleCmd cmd) tstate
+      putStrLn log
+      return tstate'
 
 -- handle user input
 handleEvents :: Event -> TurtleState -> IO TurtleState
 handleEvents event tstate = case event of
   EventKey (SpecialKey KeyUp) Down _ _ -> do
-    let cmd = Forward 10
-    tstate' <- runCmd tstate cmd
+    let cmd = "fd 10"
+    tstate' <- runCmdStr tstate cmd
     return tstate'
 
   EventKey (SpecialKey KeyDown) Down _ _ -> do
-    let cmd = Back 10
-    tstate' <- runCmd tstate cmd
+    let cmd = "bk 10"
+    tstate' <- runCmdStr tstate cmd
     return tstate'
 
   EventKey (SpecialKey KeyLeft) Down _ _ -> do
-    let cmd = TurnLeft 10
-    tstate' <- runCmd tstate cmd
+    let cmd = "left 10"
+    tstate' <- runCmdStr tstate cmd
     return tstate'
 
   EventKey (SpecialKey KeyRight) Down _ _ -> do
-    let cmd = TurnRight 10
-    tstate' <- runCmd tstate cmd
-    return tstate'
-
-  EventKey (Char 'c') Down _ _ -> do
-    let cmd = DrawCircle 50
-    tstate' <- runCmd tstate cmd
+    let cmd = "right 10"
+    tstate' <- runCmdStr tstate cmd
     return tstate'
 
   EventKey (Char '1') Down _ _ -> do
-    let cmd = Repeat 36 [Repeat 6 [PenColor 150 150 150 255, DrawCircle 100, PenColor 255 255 255 255, Forward 50, TurnRight 60], TurnRight 10]
-    let cmd2 = Repeat 36 [Repeat 6 [PenColor 100 100 100 255, DrawCircle 150, PenColor 50 50 50 255, Forward 100, TurnRight 60], TurnRight 10]
-    tstate' <- runCmd tstate $ Seq [cmd, cmd2]
+    let cmd = "repeat 36 [repeat 6 [color 150 150 150 255 circle 100 color 255 255 255 255 fd 50 right 60] right 10]"
+    let cmd2 = "repeat 36 [repeat 6 [color 100 100 100 255 circle 150 color 50 50 50 255 fd 100 right 60] right 10]"
+    tstate' <- runCmdStr tstate $ cmd ++ " " ++ cmd2
     return tstate'
 
   EventKey (Char '2') Down _ _ -> do
@@ -73,28 +79,27 @@ handleEvents event tstate = case event of
     return tstate'
 
   EventKey (Char 'q') Down _ _ -> do
-    let cmd = Seq [Clear, Home, PenColor 255 255 255 255]
-    tstate' <- runCmd tstate cmd
+    let cmd = "clear home color 255 255 255 255"
+    tstate' <- runCmdStr tstate cmd
     return tstate'
 
   EventKey (Char 's') Down _ _ -> do
     if tshow tstate
     then do
-      tstate' <- runCmd tstate HideTurtle
+      tstate' <- runCmdStr tstate "hide"
       return tstate'
     else do
-      tstate' <- runCmd tstate ShowTurtle
+      tstate' <- runCmdStr tstate "show"
       return tstate'
 
   EventKey (SpecialKey KeySpace) Down _ _ -> do
     if pen tstate
     then do
-      tstate' <- runCmd tstate PenUp
+      tstate' <- runCmdStr tstate "up"
       return tstate'
     else do
-      tstate' <- runCmd tstate PenDown
+      tstate' <- runCmdStr tstate "down"
       return tstate'
-
 
   _ -> do
     return tstate
@@ -109,16 +114,11 @@ stepLogo _ tstate = do
 stepLogo :: Float -> TurtleState -> IO TurtleState
 stepLogo _ tstate = do
   putStr "? "
-  eof <- isEOF
-  if not eof
-  then do
-    cmdstr <- getLine
-    putStrLn $ "lol i don't know how to " ++ cmdstr ++ " yet"
-    let cmd = Forward 10 -- dummy command for now
-    let (log, tstate') = runState (execTurtleCmd cmd) tstate
-    return tstate'
-  else do
-    return tstate
+  cmdstr <- forkIO getLine
+  putStrLn $ "lol i don't know how to " ++ cmdstr ++ " yet"
+  let cmd = Forward 10 -- dummy command for now
+  let (log, tstate') = runState (execTurtleCmd cmd) tstate
+  return tstate'
 --}
 
 
