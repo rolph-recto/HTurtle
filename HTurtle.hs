@@ -1,8 +1,8 @@
 import System.IO
 import System.Random
 import Control.Monad.State
-import Control.Concurrent
 import Data.Tuple.Select
+import Data.String.Utils
 import Graphics.Gloss.Interface.IO.Game hiding (color)
 
 import TurtleState
@@ -13,7 +13,8 @@ import TurtleDraw
 runCmd :: TurtleState -> TurtleExpr -> IO TurtleState
 runCmd tstate cmd = do
   let (log, tstate') = runState (execTurtleCmd cmd) tstate
-  putStrLn log
+  let log' = strip log
+  if length log' > 0 then putStrLn log' else return ()
   return tstate'
 
 runCmdStr :: TurtleState -> String -> IO TurtleState
@@ -25,7 +26,8 @@ runCmdStr tstate cmdstr = do
       return tstate
     Right cmd -> do
       let (log, tstate') = runState (execTurtleCmd cmd) tstate
-      putStrLn log
+      let log' = strip log
+      if length log' > 0 then putStrLn log' else return ()
       return tstate'
 
 -- handle user input
@@ -105,21 +107,22 @@ handleEvents event tstate = case event of
     return tstate
 
 
+fetchReplCmd :: IO (Maybe String)
+fetchReplCmd = do
+  ready <- hReady stdin
+  if ready
+    then do
+      cmdstr <- getLine
+      return $ Just cmdstr
+    else return Nothing
+
 -- step logo
 stepLogo :: Float -> TurtleState -> IO TurtleState
 stepLogo _ tstate = do
-  return tstate
-
-{--
-stepLogo :: Float -> TurtleState -> IO TurtleState
-stepLogo _ tstate = do
-  putStr "? "
-  cmdstr <- forkIO getLine
-  putStrLn $ "lol i don't know how to " ++ cmdstr ++ " yet"
-  let cmd = Forward 10 -- dummy command for now
-  let (log, tstate') = runState (execTurtleCmd cmd) tstate
-  return tstate'
---}
+  replcmd <- fetchReplCmd
+  case replcmd of
+    Just cmdstr -> runCmdStr tstate cmdstr
+    Nothing -> return tstate
 
 
 -- initial config
