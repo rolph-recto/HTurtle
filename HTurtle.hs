@@ -3,6 +3,8 @@ import System.Random
 import Control.Monad.State
 import Data.Tuple.Select
 import Data.String.Utils
+import EitherT
+
 import Graphics.Gloss.Interface.IO.Game hiding (color)
 
 import TurtleState
@@ -12,11 +14,27 @@ import TurtleDraw
 
 runCmd :: TurtleState -> TurtleExpr -> IO TurtleState
 runCmd tstate cmd = do
-  let (log, tstate') = runState (execTurtleCmd cmd) tstate
-  let log' = strip log
-  if length log' > 0 then putStrLn log' else return ()
-  return tstate'
+  -- type check the expression before executing it
+  case typeTurtle cmd of
+    Left err -> do
+      print err
+      return tstate
+    Right _ -> do
+      let (log, tstate') = runState (runEitherT (execTurtleCmd cmd)) tstate
+      case log of
+        Left err2 -> do
+          print err2
+          -- returning tstate instead of tstate' ensures that if the expr
+          -- causes a crash that the TurtleState is kept the same as
+          -- before the execution of the expression
+          -- alternatively, we can also return tstate', which will keep
+          -- the changes made to the TurtleState while executing the expr
+          -- prior to the crash
+          return tstate
+        Right _ -> do
+          return tstate'
 
+{-
 runCmdStr :: TurtleState -> String -> IO TurtleState
 runCmdStr tstate cmdstr = do
   let parseResult = parseTurtle cmdstr
@@ -29,43 +47,44 @@ runCmdStr tstate cmdstr = do
       let log' = strip log
       if length log' > 0 then putStrLn log' else return ()
       return tstate'
+-}
 
 -- handle user input
 handleEvents :: Event -> TurtleState -> IO TurtleState
 handleEvents event tstate = case event of
   EventKey (SpecialKey KeyUp) Down _ _ -> do
-    let cmd = "fd 10"
-    tstate' <- runCmdStr tstate cmd
+    let cmd = Forward (Num 10)
+    tstate' <- runCmd tstate cmd
     return tstate'
 
   EventKey (SpecialKey KeyDown) Down _ _ -> do
-    let cmd = "bk 10"
-    tstate' <- runCmdStr tstate cmd
+    let cmd = Back (Num 10)
+    tstate' <- runCmd tstate cmd
     return tstate'
 
   EventKey (SpecialKey KeyLeft) Down _ _ -> do
-    let cmd = "left 10"
-    tstate' <- runCmdStr tstate cmd
+    let cmd = TurnLeft (Num 10)
+    tstate' <- runCmd tstate cmd
     return tstate'
 
   EventKey (SpecialKey KeyRight) Down _ _ -> do
-    let cmd = "right 10"
-    tstate' <- runCmdStr tstate cmd
+    let cmd = TurnRight (Num 10)
+    tstate' <- runCmd tstate cmd
     return tstate'
 
   EventKey (Char '1') Down _ _ -> do
-    let cmd = "repeat 36 [repeat 6 [color 150 150 150 255 circle 100 color 255 255 255 255 fd 50 right 60] right 10]"
-    let cmd2 = "repeat 36 [repeat 6 [color 100 100 100 255 circle 150 color 50 50 50 255 fd 100 right 60] right 10]"
-    tstate' <- runCmdStr tstate $ cmd ++ " " ++ cmd2
+    let cmd = Repeat (Num 36) [Repeat (Num 6) [PenColor (Num 150) (Num 150) (Num 150) (Num 255), DrawCircle (Num 100), PenColor (Num 255) (Num 255) (Num 255) (Num 255), Forward (Num 50), TurnRight (Num 60)], TurnRight (Num 10)]
+    let cmd2 = Repeat (Num 36) [Repeat (Num 6) [PenColor (Num 100) (Num 100) (Num 100) (Num 255), DrawCircle (Num 150), PenColor (Num 50) (Num 50) (Num 50) (Num 255), Forward (Num 100), TurnRight (Num 60)], TurnRight (Num 10)]
+    tstate' <- runCmd tstate $ Seq [cmd, cmd2]
     return tstate'
 
   EventKey (Char '2') Down _ _ -> do
-    let cmd = Seq [Seq [PenColor 255 255 255 255, Repeat 4 [TurnRight 85, Forward (5*i)]] | i <- [1..75]]
+    let cmd = Seq [Seq [PenColor (Num 255) (Num 255) (Num 255) (Num 255), Repeat (Num 4) [TurnRight (Num 85), Forward (Num (5*i))]] | i <- [1..75]]
     tstate' <- runCmd tstate cmd
     return tstate'
 
   EventKey (Char '3') Down _ _ -> do
-    let cmd = Seq [Seq [PenColor (255-i*2) (255-i*2) (255-i*2) 255, Repeat 3 [TurnRight 110, Forward (5*i)]] | i <- [1..100]]
+    let cmd = Seq [Seq [PenColor (Num (255-i*2)) (Num (255-i*2)) (Num (255-i*2)) (Num 255), Repeat (Num 3) [TurnRight (Num 110), Forward (Num (5*i))]] | i <- [1..100]]
     tstate' <- runCmd tstate cmd
     return tstate'
 
@@ -76,31 +95,31 @@ handleEvents event tstate = case event of
       b <- getStdRandom $ randomR (0,255)
       return (r,g,b)
     let colors = take 201 $ cycle ccycle
-    let cmd = Seq [Seq [PenColor (sel1 (colors!!i)) (sel2 (colors!!i)) (sel3 (colors!!i)) 255, TurnRight 89, Forward (2*i)] | i <- [1..200]]
+    let cmd = Seq [Seq [PenColor (Num $ sel1 (colors!!i)) (Num $ sel2 (colors!!i)) (Num $ sel3 (colors!!i)) (Num 255), TurnRight (Num 89), Forward (Num (2*i))] | i <- [1..200]]
     tstate' <- runCmd tstate cmd
     return tstate'
 
   EventKey (Char 'q') Down _ _ -> do
-    let cmd = "clear home color 255 255 255 255"
-    tstate' <- runCmdStr tstate cmd
+    let cmd = Seq [Clear, Home, PenColor (Num 255) (Num 255) (Num 255) (Num 255)]
+    tstate' <- runCmd tstate cmd
     return tstate'
 
   EventKey (Char 's') Down _ _ -> do
     if tshow tstate
     then do
-      tstate' <- runCmdStr tstate "hide"
+      tstate' <- runCmd tstate HideTurtle
       return tstate'
     else do
-      tstate' <- runCmdStr tstate "show"
+      tstate' <- runCmd tstate ShowTurtle
       return tstate'
 
   EventKey (SpecialKey KeySpace) Down _ _ -> do
     if pen tstate
     then do
-      tstate' <- runCmdStr tstate "up"
+      tstate' <- runCmd tstate PenUp
       return tstate'
     else do
-      tstate' <- runCmdStr tstate "down"
+      tstate' <- runCmd tstate PenDown
       return tstate'
 
   _ -> do
@@ -121,9 +140,10 @@ stepLogo :: Float -> TurtleState -> IO TurtleState
 stepLogo _ tstate = do
   replcmd <- fetchReplCmd
   case replcmd of
-    Just cmdstr -> runCmdStr tstate cmdstr
+    -- need to implement parser first...
+    -- Just cmdstr -> runCmdStr tstate cmdstr
+    Just cmdstr -> return tstate
     Nothing -> return tstate
-
 
 -- initial config
 initTurtleState = TurtleState {

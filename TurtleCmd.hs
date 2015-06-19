@@ -8,6 +8,7 @@ module TurtleCmd (
 import Control.Monad.State
 import Data.String (unlines)
 import Graphics.Gloss (Color, makeColorI)
+import EitherT
 
 import TurtleState
 import TurtleExpr
@@ -31,14 +32,34 @@ roundAngle angle =
        then angle - 360.0
        else angle
 
-moveTurtle :: Int -> Float -> State TurtleState String
-moveTurtle steps direction = do
+-- helper functions to convert Turtle values to Haskell values
+-- exceptions thrown here should be unreachable
+-- by type-checking expressions before executing them
+toTurtleNum :: TurtleValue -> Int
+toTurtleNum (TurtleNum n) = n
+toTurtleNum _             = error "value is not TurtleNum"
+
+toTurtleBool :: TurtleValue -> Bool
+toTurtleBool (TurtleBool b) = b
+toTurtleBool _              = error "value is not TurtleBool"
+
+toTurtleUnit :: TurtleValue -> ()
+toTurtleUnit TurtleUnit = ()
+toTurtleUnit _          = error "value is not TurtleUnit"
+
+lget = lift get
+lput = lift . put
+
+moveTurtle :: TurtleExpr -> Float -> EitherT String (State TurtleState) TurtleValue
+moveTurtle steps' direction = do
+  ret <- execTurtleCmd steps'
+  let steps = toTurtleNum ret
   -- steps must be nonnegative
   if steps < 0
   then do
-    return "Steps must be non-negative"
+    failEitherT "Steps must be non-negative"
   else do
-    tstate <- get
+    tstate <- lget
     -- subtract 90 from angle since
     -- then convert to radians
     let radAngle = (((tangle tstate) + 90.0) / 360.0) * 2 * pi
@@ -54,58 +75,59 @@ moveTurtle steps direction = do
       let line = drawLine (x,y) (x',y') (penColor tstate)
       let shapes' = line:(shapes tstate)
       let tstate' = tstate { tx=x', ty=y', shapes=shapes' }
-      put tstate'
-      return ""
+      lput tstate'
+      return TurtleUnit
     else do
       let tstate' = tstate { tx=x', ty=y' }
-      put tstate'
-      return ""
+      lput tstate'
+      return TurtleUnit
 
-turnTurtle :: Int -> Float -> State TurtleState String
-turnTurtle delta direction = do
+turnTurtle :: TurtleExpr -> Float -> EitherT String (State TurtleState) TurtleValue
+turnTurtle delta' direction = do
+  ret <- execTurtleCmd delta'
+  let delta = toTurtleNum ret
   -- steps must be nonnegative
   if delta < 0
   then do
-    return "Angle must be non-negative"
+    failEitherT "Angle must be non-negative"
   else do
-    tstate <- get
+    tstate <- lget
 
     let angle' = (tangle tstate) + (fromIntegral delta :: Float) * direction
     let tstate' = tstate { tangle=roundAngle angle' }
-    put tstate'
+    lput tstate'
     
-    return ""
+    return TurtleUnit
 
--- execute turtle langage commands (evals AST)
-execTurtleCmd :: TurtleExpr -> State TurtleState String
+-- interprets turtle langage commands (evals AST)
+-- this implements big-step operational semantics
+execTurtleCmd :: TurtleExpr -> EitherT String (State TurtleState) TurtleValue
 execTurtleCmd cmd = case cmd of
   -- move turtle forward
   Forward steps -> do
-    log <- moveTurtle steps 1.0
-    return log
+    moveTurtle steps 1.0
 
   -- move turtle backward
   Back steps -> do
-    log <- moveTurtle steps (-1.0)
-    return log
+    moveTurtle steps (-1.0)
 
   -- rotate turtle rightward
   TurnRight delta -> do
-    log <- turnTurtle delta (-1.0)
-    return log
+    turnTurtle delta (-1.0)
 
   -- rotate turtle leftward
   TurnLeft delta -> do
-    log <- turnTurtle delta 1.0
-    return log
+    turnTurtle delta 1.0
 
   -- draw a circle
-  DrawCircle r -> do
+  DrawCircle r' -> do
+    ret <- execTurtleCmd r'
+    let r = toTurtleNum ret
     if r < 0
     then do
-      return "Radius must be non-negative"
+      failEitherT "Radius must be non-negative"
     else do
-      tstate <- get
+      tstate <- lget
       if pen tstate
       then do
         let c = CanvasCircle {
@@ -114,93 +136,206 @@ execTurtleCmd cmd = case cmd of
                 , cy=ty tstate
                 , color=penColor tstate
                 }
-        put $ tstate { shapes=c:(shapes tstate) }
-        return ""
-      else
-        return ""
+        lput $ tstate { shapes=c:(shapes tstate) }
+        return TurtleUnit
+      else do
+        return TurtleUnit
 
   -- turtle doesn't draw
   PenUp -> do
-    tstate <- get
-    put $ tstate { pen=False }
-    return ""
+    tstate <- lget
+    lput $ tstate { pen=False }
+    return TurtleUnit
 
   -- turtle draws
   PenDown -> do
-    tstate <- get
-    put $ tstate { pen=True }
-    return ""
+    tstate <- lget
+    lput $ tstate { pen=True }
+    return TurtleUnit
 
   -- set x coord of turtle
-  SetX x -> do
-    tstate <- get
-    put $ tstate { tx=fromIntegral x :: Float }
-    return ""
+  SetX x' -> do
+    ret <- execTurtleCmd x'
+    let x = toTurtleNum ret
+    tstate <- lget
+    lput $ tstate { tx=fromIntegral x :: Float }
+    return TurtleUnit
     
   -- set y coord of turtle
-  SetY y -> do
-    tstate <- get
-    put $ tstate { ty=fromIntegral y :: Float }
-    return ""
+  SetY y' -> do
+    ret <- execTurtleCmd y'
+    let y = toTurtleNum ret
+    tstate <- lget
+    lput $ tstate { ty=fromIntegral y :: Float }
+    return TurtleUnit
 
   -- set turtle coords
-  SetXY x y -> do
-    tstate <- get
-    put $ tstate { tx=fromIntegral x :: Float, ty=fromIntegral y :: Float }
-    return ""
+  SetXY x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleNum retX
+    let y = toTurtleNum retY
+    tstate <- lget
+    lput $ tstate { tx=fromIntegral x :: Float, ty=fromIntegral y :: Float }
+    return TurtleUnit
 
   -- set turtle angle
-  SetAngle angle -> do
-    tstate <- get
-    put $ tstate { tangle=roundAngle $ fromIntegral angle :: Float }
-    return ""
+  SetAngle angle' -> do
+    ret <- execTurtleCmd angle'
+    let angle = toTurtleNum ret
+    tstate <- lget
+    lput $ tstate { tangle=roundAngle $ fromIntegral angle :: Float }
+    return TurtleUnit
 
   -- move turtle to original position
   Home -> do
-    tstate <- get
-    put $ tstate { tx=0.0, ty=0.0, tangle=0.0 }
-    return ""
+    tstate <- lget
+    lput $ tstate { tx=0.0, ty=0.0, tangle=0.0 }
+    return TurtleUnit
 
   -- set pen color
-  PenColor r g b a -> do
+  PenColor r' g' b' a' -> do
+    retR <- execTurtleCmd r'
+    retG <- execTurtleCmd g'
+    retB <- execTurtleCmd b'
+    retA <- execTurtleCmd a'
+    let r = toTurtleNum retR
+    let g = toTurtleNum retG
+    let b = toTurtleNum retB
+    let a = toTurtleNum retA
     if checkColor r && checkColor g && checkColor b && checkColor a
     then do
-      tstate <- get
-      put $ tstate { penColor=makeColorI r g b a }
-      return ""
+      tstate <- lget
+      lput $ tstate { penColor=makeColorI r g b a }
+      return TurtleUnit
     else do
-      return "Color components must be between [0,255]"
+      failEitherT "Color components must be between [0,255]"
     where checkColor c = c >= 0 && c <= 255
 
   -- draw the turtle
   ShowTurtle -> do
-    tstate <- get
-    put $ tstate { tshow=True }
-    return ""
+    tstate <- lget
+    lput $ tstate { tshow=True }
+    return TurtleUnit
 
   -- don't draw the turtle
   HideTurtle -> do
-    tstate <- get
-    put $ tstate { tshow=False }
-    return ""
+    tstate <- lget
+    lput $ tstate { tshow=False }
+    return TurtleUnit
 
   -- clear the screen
   Clear -> do
-    tstate <- get
-    put $ tstate { shapes=[] }
-    return ""
+    tstate <- lget
+    lput $ tstate { shapes=[] }
+    return TurtleUnit
 
+  -- perform a sequence of commands
   Seq seq -> do
-    logs <- forM seq execTurtleCmd
-    return $ unlines logs
+    sequence $ map execTurtleCmd seq
+    return TurtleUnit
 
   -- loop over a sequence of commands
-  Repeat n seq -> do
+  Repeat n' seq -> do
+    retN <- execTurtleCmd n'
+    let n = toTurtleNum retN
     if n > 0
     then do
-      logs <- execTurtleCmd $ Seq seq
-      tailLogs <- execTurtleCmd (Repeat (n-1) seq)
-      return $ logs ++ tailLogs
+      execTurtleCmd $ Seq seq
+      execTurtleCmd (Repeat (Num (n-1)) seq)
+      return TurtleUnit
     else do
-      return ""
+      return TurtleUnit
 
+  If pred' thenBranch elseBranch -> do
+    ret <- execTurtleCmd pred'
+    let pred = toTurtleBool ret
+    if pred
+    then do
+      execTurtleCmd thenBranch
+    else do
+      execTurtleCmd elseBranch
+  
+  Num n -> do
+    return $ TurtleNum n
+
+  Add x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleNum retX
+    let y = toTurtleNum retY
+    return $ TurtleNum (x+y)
+
+  Sub x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleNum retX
+    let y = toTurtleNum retY
+    return $ TurtleNum (x-y)
+
+  Mul x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleNum retX
+    let y = toTurtleNum retY
+    return $ TurtleNum (x*y)
+
+  BoolTrue -> do
+    return $ TurtleBool True
+
+  BoolFalse -> do
+    return $ TurtleBool False
+
+  And x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleBool retX
+    let y = toTurtleBool retY
+    return $ TurtleBool (x && y)
+
+  Or x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleBool retX
+    let y = toTurtleBool retY
+    return $ TurtleBool (x || y)
+
+  Not x' -> do
+    retX <- execTurtleCmd x'
+    let x = toTurtleBool retX
+    return $ TurtleBool (not x)
+
+  Eq x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleNum retX
+    let y = toTurtleNum retY
+    return $ TurtleBool (x == y)
+
+  Leq x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleNum retX
+    let y = toTurtleNum retY
+    return $ TurtleBool (x <= y)
+
+  Geq x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleNum retX
+    let y = toTurtleNum retY
+    return $ TurtleBool (x >= y)
+
+  Lt x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleNum retX
+    let y = toTurtleNum retY
+    return $ TurtleBool (x < y)
+
+  Gt x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleNum retX
+    let y = toTurtleNum retY
+    return $ TurtleBool (x > y)

@@ -2,35 +2,63 @@
 -- definition and parser for turtle command language
 
 module TurtleExpr (
-  TurtleExpr(..),
-  parseTurtle
+  TurtleExpr(..)
+, TurtleValue(..)
+-- , parseTurtle
+, typeTurtle
 ) where
 
 import Data.Char
 import Data.String.Utils
-import Debug.Trace
+import Control.Monad
+
 import Text.ParserCombinators.Parsec
 
-data TurtleExpr = Forward Int               -- move turtle forward
-                | Back Int                  -- move turtle backward
-                | TurnRight Int             -- rotate turtle rightward
-                | TurnLeft Int              -- rotate turtle leftward
-                | DrawCircle Int            -- draw a circle of some radius
-                | PenUp                     -- turtle doesn't draw
-                | PenDown                   -- turtle draws again
-                | SetX Int                  -- set turtle x-coord
-                | SetY Int                  -- set turtle y-coord
-                | SetXY Int Int             -- set turtle coords
-                | SetAngle Int              -- set turtle angle
-                | Home                      -- move turtle to (0,0)
-                | PenColor Int Int Int Int  -- set pen color
-                | ShowTurtle                -- show the turtle
-                | HideTurtle                -- hide the turtle
-                | Clear                     -- clear the screen
-                | Seq [TurtleExpr]          -- sequence of commands
-                | Repeat Int [TurtleExpr]   -- repeat a sequence of commands
+data TurtleExpr = Forward TurtleExpr                                    -- move turtle forward
+                | Back TurtleExpr                                       -- move turtle backward
+                | TurnRight TurtleExpr                                  -- rotate turtle rightward
+                | TurnLeft TurtleExpr                                   -- rotate turtle leftward
+                | DrawCircle TurtleExpr                                 -- draw a circle of some radius
+                | PenUp                                                 -- turtle doesn't draw
+                | PenDown                                               -- turtle draws again
+                | SetX TurtleExpr                                       -- set turtle x-coord
+                | SetY TurtleExpr                                       -- set turtle y-coord
+                | SetXY TurtleExpr TurtleExpr                           -- set turtle coords
+                | SetAngle TurtleExpr                                   -- set turtle angle
+                | Home                                                  -- move turtle to (0,0)
+                | PenColor TurtleExpr TurtleExpr TurtleExpr TurtleExpr  -- set pen color
+                | ShowTurtle                                            -- show the turtle
+                | HideTurtle                                            -- hide the turtle
+                | Clear                                                 -- clear the screen
+                | Seq [TurtleExpr]                                      -- sequence of commands
+                | Repeat TurtleExpr [TurtleExpr]                        -- repeat a sequence of commands
+                | If TurtleExpr TurtleExpr TurtleExpr                   -- conditional
+                -- ARITHMETIC
+                | Num Int                   
+                | Add TurtleExpr TurtleExpr 
+                | Sub TurtleExpr TurtleExpr
+                | Mul TurtleExpr TurtleExpr
+                -- | Div TurtleExpr TurtleExpr
+                -- we're going to ignore Div for now since
+                -- we want to bypass div by zero issues and
+                -- the fact that it is not closed under the naturals
+                -- Boolean
+                | BoolTrue
+                | BoolFalse
+                | And TurtleExpr TurtleExpr
+                | Or TurtleExpr TurtleExpr
+                | Not TurtleExpr
+                | Eq TurtleExpr TurtleExpr
+                | Leq TurtleExpr TurtleExpr
+                | Geq TurtleExpr TurtleExpr
+                | Lt TurtleExpr TurtleExpr
+                | Gt TurtleExpr TurtleExpr
                 deriving (Show)
 
+-- values that turtle expressions can evaluate to
+data TurtleValue = TurtleNum Int | TurtleBool Bool | TurtleUnit
+
+{--
 -- PARSER
 
 turtleSeq = do
@@ -57,7 +85,23 @@ turtleExpr =  try forward
           <|> try showTurtle
           <|> try hideTurtle
           <|> try clear
-          <|> turtleRepeat
+          <|> try turtleRepeat
+          <|> try turtleIf
+          <|> try turtleNum
+          <|> try turtleAdd
+          <|> try turtleSub
+          <|> try turtleMul
+          <|> try turtleTrue
+          <|> try turtleFalse
+          <|> try turtleAnd
+          <|> try turtleOr
+          <|> try turtleNot
+          <|> try turtleEq
+          <|> try turtleLeq
+          <|> try turtleGeq
+          <|> try turtleLt
+          <|> turtleGt
+
 
 forward = do
   (try $ string "forward") <|> (try $ string "fd") <|> string "f"
@@ -186,3 +230,158 @@ preprocessInput input = foldr (\f acc -> f acc) input processors
 
 parseTurtle :: String -> Either ParseError TurtleExpr
 parseTurtle input = parse turtleSeq "" (preprocessInput input)
+--}
+
+-- TYPE CHECKER
+data TurtleType = CmdType | NumType | BoolType
+
+instance Show TurtleType where
+  show CmdType = "command"
+  show NumType = "number"
+  show BoolType = "boolean"
+
+-- helper functions
+isNumType :: TurtleType -> Bool
+isNumType NumType = True
+isNumType _       = False
+
+isCmdType :: TurtleType -> Bool
+isCmdType CmdType = True
+isCmdType _       = False
+
+isBoolType :: TurtleType -> Bool
+isBoolType BoolType = True
+isBoolType _        = False
+
+-- generic function that typechecks
+-- commands that take in integer arguments
+validArgTypes :: (TurtleType -> Bool) -> TurtleType -> String -> [TurtleExpr] -> Either String TurtleType
+validArgTypes validArg validType errorMsg args = do
+  argTypes <- forM args typeTurtle
+  if all validArg argTypes
+    then Right validType
+    else Left errorMsg
+
+-- typecheck a single expression
+typeTurtle :: TurtleExpr -> Either String TurtleType
+typeTurtle expr = case expr of
+  Forward steps ->
+    validArgTypes isNumType CmdType "steps for forward cmd must be a number" [steps]
+
+  Back steps ->
+    validArgTypes isNumType CmdType "steps for back cmd must be a number" [steps]
+
+  TurnRight angle ->
+    validArgTypes isNumType CmdType "angle for turn right cmd must be a number" [angle]
+
+  TurnLeft angle ->
+    validArgTypes isNumType CmdType "angle for turn left cmd must be a number" [angle]
+
+  DrawCircle radius ->
+    validArgTypes isNumType CmdType "radius for circle cmd must be a number" [radius]
+
+  PenUp ->
+    Right CmdType
+
+  PenDown ->
+    Right CmdType
+
+  SetX x ->
+    validArgTypes isNumType CmdType "position for setx cmd must be a number" [x]
+
+  SetY y ->
+    validArgTypes isNumType CmdType "position for sety cmd must be a number" [y]
+
+  SetXY x y ->
+    validArgTypes isNumType CmdType "positions for setxy cmd must be numbers" [x,y]
+
+  SetAngle angle ->
+    validArgTypes isNumType CmdType "angle for setangle cmd must be a number" [angle]
+
+  Home ->
+    Right CmdType
+  
+  PenColor r g b a -> 
+    validArgTypes isNumType CmdType "colors must be numbers" [r,g,b,a]
+
+  ShowTurtle ->
+    Right CmdType
+
+  HideTurtle ->
+    Right CmdType
+  
+  Clear ->
+    Right CmdType
+
+  Seq exprs -> do
+    exprsTypes <- forM exprs typeTurtle
+    if all isCmdType exprsTypes
+      then Right CmdType
+      else Left "sequence expressions must be commands"
+    
+  Repeat n exprs -> do
+    nType <- typeTurtle n
+    if isNumType nType
+      then do
+        exprsTypes <- forM exprs typeTurtle
+        if all isCmdType exprsTypes
+          then Right CmdType
+          else Left "expressions in repeat list must be commands"
+      else Left "iterations for repeat command must be a number"
+
+  If pred thenExpr elseExpr -> do
+    predType <- typeTurtle pred
+    if isBoolType predType
+      then do
+        thenType <- typeTurtle thenExpr
+        elseType <- typeTurtle elseExpr
+        if isCmdType thenType && isCmdType elseType
+          then Right CmdType
+          else Left "conditional branches must be commands"
+      else Left "predicate of if statement must be a boolean"
+  
+  Num _ ->
+    Right NumType
+
+  Add x y ->
+    validArgTypes isNumType NumType "+ takes in two numbers" [x, y]
+
+  Sub x y ->
+    validArgTypes isNumType NumType "- takes in two numbers" [x, y]
+
+  Mul x y ->
+    validArgTypes isNumType NumType "* takes in two numbers" [x, y]
+
+  BoolTrue ->
+    Right BoolType
+  
+  BoolFalse ->
+    Right BoolType
+
+  And x y ->
+    validArgTypes isBoolType BoolType "AND takes in two booleans" [x, y]
+
+  Or x y ->
+    validArgTypes isBoolType BoolType "OR takes in two booleans" [x, y]
+
+  Not x ->
+    validArgTypes isBoolType BoolType "NOT takes in a boolean" [x]
+
+  Eq x y ->
+    validArgTypes isNumType BoolType "== takes in two numbers" [x, y]
+  
+  Leq x y ->
+    validArgTypes isNumType BoolType "<= takes in two numbers" [x, y]
+
+  Geq x y ->
+    validArgTypes isNumType BoolType ">= takes in two numbers" [x, y]
+
+  Lt x y ->
+    validArgTypes isNumType BoolType "< takes in two numbers" [x, y]
+
+  Gt x y ->
+    validArgTypes isNumType BoolType "> takes in two numbers" [x, y]
+    
+    
+
+  
