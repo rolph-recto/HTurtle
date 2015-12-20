@@ -14,49 +14,57 @@ import Control.Monad
 
 import Text.ParserCombinators.Parsec
 
-data TurtleExpr = Forward TurtleExpr                                    -- move turtle forward
-                | Back TurtleExpr                                       -- move turtle backward
-                | TurnRight TurtleExpr                                  -- rotate turtle rightward
-                | TurnLeft TurtleExpr                                   -- rotate turtle leftward
-                | DrawCircle TurtleExpr                                 -- draw a circle of some radius
-                | PenUp                                                 -- turtle doesn't draw
-                | PenDown                                               -- turtle draws again
-                | SetX TurtleExpr                                       -- set turtle x-coord
-                | SetY TurtleExpr                                       -- set turtle y-coord
-                | SetXY TurtleExpr TurtleExpr                           -- set turtle coords
-                | SetAngle TurtleExpr                                   -- set turtle angle
-                | Home                                                  -- move turtle to (0,0)
-                | PenColor TurtleExpr TurtleExpr TurtleExpr TurtleExpr  -- set pen color
-                | ShowTurtle                                            -- show the turtle
-                | HideTurtle                                            -- hide the turtle
-                | Clear                                                 -- clear the screen
-                | Seq [TurtleExpr]                                      -- sequence of commands
-                | Repeat TurtleExpr [TurtleExpr]                        -- repeat a sequence of commands
-                | If TurtleExpr TurtleExpr TurtleExpr                   -- conditional
-                -- ARITHMETIC
-                | Num Int                   
-                | Add TurtleExpr TurtleExpr 
-                | Sub TurtleExpr TurtleExpr
-                | Mul TurtleExpr TurtleExpr
-                -- | Div TurtleExpr TurtleExpr
-                -- we're going to ignore Div for now since
-                -- we want to bypass div by zero issues and
-                -- the fact that it is not closed under the naturals
-                -- Boolean
-                | BoolTrue
-                | BoolFalse
-                | And TurtleExpr TurtleExpr
-                | Or TurtleExpr TurtleExpr
-                | Not TurtleExpr
-                | Eq TurtleExpr TurtleExpr
-                | Leq TurtleExpr TurtleExpr
-                | Geq TurtleExpr TurtleExpr
-                | Lt TurtleExpr TurtleExpr
-                | Gt TurtleExpr TurtleExpr
-                deriving (Show)
+data TurtleExpr =
+    Forward TurtleExpr
+  | Back TurtleExpr
+  | TurnRight TurtleExpr
+  | TurnLeft TurtleExpr
+  | DrawCircle TurtleExpr
+  | PenUp
+  | PenDown
+  | SetX TurtleExpr
+  | SetY TurtleExpr
+  | SetXY TurtleExpr TurtleExpr
+  | SetAngle TurtleExpr
+  | Home
+  | PenColor TurtleExpr TurtleExpr TurtleExpr TurtleExpr
+  | ShowTurtle
+  | HideTurtle
+  | Clear
+  -- ARITHMETIC EXPRS
+  | Num Int                   
+  | Add TurtleExpr TurtleExpr 
+  | Sub TurtleExpr TurtleExpr
+  | Mul TurtleExpr TurtleExpr
+  | Div TurtleExpr TurtleExpr
+  -- BOOLEAN EXPRS
+  | BoolTrue
+  | BoolFalse
+  | And TurtleExpr TurtleExpr
+  | Or TurtleExpr TurtleExpr
+  | Not TurtleExpr
+  | Eq TurtleExpr TurtleExpr
+  | Leq TurtleExpr TurtleExpr
+  | Geq TurtleExpr TurtleExpr
+  | Lt TurtleExpr TurtleExpr
+  | Gt TurtleExpr TurtleExpr
+  -- VARIABLES
+  | Var String
+  | SetVar String TurtleExpr
+  -- FUNCTIONS AND OTHER
+  | Seq [TurtleExpr]
+  | Repeat TurtleExpr [TurtleExpr]
+  | If TurtleExpr TurtleExpr TurtleExpr
+  | Return TurtleExpr
+  deriving (Show)
 
 -- values that turtle expressions can evaluate to
-data TurtleValue = TurtleNum Int | TurtleBool Bool | TurtleUnit
+data TurtleValue =
+    TurtleNum Int
+  | TurtleBool Bool
+  | TurtleUnit
+  -- a function and a list of its arguments (w/ names they bind to)
+  | TurtleFunc [String]
 
 {--
 -- PARSER
@@ -233,7 +241,12 @@ parseTurtle input = parse turtleSeq "" (preprocessInput input)
 --}
 
 -- TYPE CHECKER
-data TurtleType = CmdType | NumType | BoolType
+-- variables must have their own type since we
+-- assume variables can be any value;
+-- thus VarTypes essentially get treated as wildcards
+-- of course we're just making compile time errors to be
+-- runtime errors; this could be a fixme in the future
+data TurtleType = CmdType | NumType | BoolType | VarType
 
 instance Show TurtleType where
   show CmdType = "command"
@@ -243,14 +256,17 @@ instance Show TurtleType where
 -- helper functions
 isNumType :: TurtleType -> Bool
 isNumType NumType = True
+isNumType VarType = True
 isNumType _       = False
 
 isCmdType :: TurtleType -> Bool
 isCmdType CmdType = True
+isCmdType VarType = True
 isCmdType _       = False
 
 isBoolType :: TurtleType -> Bool
 isBoolType BoolType = True
+isBoolType VarType  = True
 isBoolType _        = False
 
 -- generic function that typechecks
@@ -265,53 +281,53 @@ validArgTypes validArg validType errorMsg args = do
 -- typecheck a single expression
 typeTurtle :: TurtleExpr -> Either String TurtleType
 typeTurtle expr = case expr of
-  Forward steps ->
+  Forward steps -> do
     validArgTypes isNumType CmdType "steps for forward cmd must be a number" [steps]
 
-  Back steps ->
+  Back steps -> do
     validArgTypes isNumType CmdType "steps for back cmd must be a number" [steps]
 
-  TurnRight angle ->
+  TurnRight angle -> do
     validArgTypes isNumType CmdType "angle for turn right cmd must be a number" [angle]
 
-  TurnLeft angle ->
+  TurnLeft angle -> do
     validArgTypes isNumType CmdType "angle for turn left cmd must be a number" [angle]
 
-  DrawCircle radius ->
+  DrawCircle radius -> do
     validArgTypes isNumType CmdType "radius for circle cmd must be a number" [radius]
 
-  PenUp ->
-    Right CmdType
+  PenUp -> do
+    return CmdType
 
-  PenDown ->
-    Right CmdType
+  PenDown -> do
+    return CmdType
 
-  SetX x ->
+  SetX x -> do
     validArgTypes isNumType CmdType "position for setx cmd must be a number" [x]
 
-  SetY y ->
+  SetY y -> do
     validArgTypes isNumType CmdType "position for sety cmd must be a number" [y]
 
-  SetXY x y ->
+  SetXY x y -> do
     validArgTypes isNumType CmdType "positions for setxy cmd must be numbers" [x,y]
 
-  SetAngle angle ->
+  SetAngle angle -> do
     validArgTypes isNumType CmdType "angle for setangle cmd must be a number" [angle]
 
-  Home ->
-    Right CmdType
+  Home -> do
+    return CmdType
   
-  PenColor r g b a -> 
+  PenColor r g b a -> do
     validArgTypes isNumType CmdType "colors must be numbers" [r,g,b,a]
 
-  ShowTurtle ->
-    Right CmdType
+  ShowTurtle -> do
+    return CmdType
 
-  HideTurtle ->
-    Right CmdType
+  HideTurtle -> do
+    return CmdType
   
   Clear ->
-    Right CmdType
+    return CmdType
 
   Seq exprs -> do
     exprsTypes <- forM exprs typeTurtle
@@ -339,49 +355,57 @@ typeTurtle expr = case expr of
           then Right CmdType
           else Left "conditional branches must be commands"
       else Left "predicate of if statement must be a boolean"
-  
-  Num _ ->
-    Right NumType
 
-  Add x y ->
+  Return retExpr -> do
+    -- force type checking on return expr
+    -- return doesn't really care what type it is
+    retType <- typeTurtle retExpr
+    return CmdType
+  
+  Num _ -> do
+    return NumType
+
+  Add x y -> do
     validArgTypes isNumType NumType "+ takes in two numbers" [x, y]
 
-  Sub x y ->
+  Sub x y -> do
     validArgTypes isNumType NumType "- takes in two numbers" [x, y]
 
-  Mul x y ->
+  Mul x y -> do
     validArgTypes isNumType NumType "* takes in two numbers" [x, y]
 
-  BoolTrue ->
-    Right BoolType
+  BoolTrue -> do
+    return BoolType
   
-  BoolFalse ->
-    Right BoolType
+  BoolFalse -> do
+    return BoolType
 
-  And x y ->
+  And x y -> do
     validArgTypes isBoolType BoolType "AND takes in two booleans" [x, y]
 
-  Or x y ->
+  Or x y -> do
     validArgTypes isBoolType BoolType "OR takes in two booleans" [x, y]
 
-  Not x ->
+  Not x -> do
     validArgTypes isBoolType BoolType "NOT takes in a boolean" [x]
 
-  Eq x y ->
+  Eq x y -> do
     validArgTypes isNumType BoolType "== takes in two numbers" [x, y]
   
-  Leq x y ->
+  Leq x y -> do
     validArgTypes isNumType BoolType "<= takes in two numbers" [x, y]
 
-  Geq x y ->
+  Geq x y -> do
     validArgTypes isNumType BoolType ">= takes in two numbers" [x, y]
 
-  Lt x y ->
+  Lt x y -> do
     validArgTypes isNumType BoolType "< takes in two numbers" [x, y]
 
-  Gt x y ->
+  Gt x y -> do
     validArgTypes isNumType BoolType "> takes in two numbers" [x, y]
     
+  Var _ -> do
+    return VarType
     
 
   

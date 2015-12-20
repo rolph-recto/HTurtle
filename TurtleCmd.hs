@@ -1,28 +1,28 @@
 -- turtleCmd.hs
 -- interpreter for turtle command language
 
-module TurtleCmd (
-  execTurtleCmd
-) where
+module TurtleCmd (execTurtleCmd) where 
+
+import Graphics.Gloss (Color, makeColorI)
 
 import Control.Monad.State
-import Data.String (unlines)
-import Graphics.Gloss (Color, makeColorI)
 import EitherT
 
-import TurtleState
+import Data.String (unlines)
+import qualified Data.Map.Strict as M
+
+import TurtleDraw
 import TurtleExpr
+
+type TurtleEnv = M.HashMap String TurtleVal
+
+-- (draw state, activation records, heap)
+type TurtleState = (DrawState, [TurtleEnv], TurtleEnv)
 
 -- draw a line (duh)
 drawLine :: (Float, Float) -> (Float, Float) -> Color -> CanvasShape
 drawLine (oldx,oldy) (newx,newy) c =
-  CanvasLine {
-    x1 = oldx
-  , y1 = oldy
-  , x2 = newx
-  , y2 = newy
-  , color = c
-  }
+  CanvasLine { x1 = oldx, y1 = oldy, x2 = newx, y2 = newy, color = c }
 
 roundAngle :: Float -> Float
 roundAngle angle =
@@ -59,12 +59,12 @@ moveTurtle steps' direction = do
   then do
     failEitherT "Steps must be non-negative"
   else do
-    tstate <- lget
+    (dstate,env) <- lget
     -- subtract 90 from angle since
     -- then convert to radians
-    let radAngle = (((tangle tstate) + 90.0) / 360.0) * 2 * pi
-    let x = tx tstate
-    let y = ty tstate
+    let radAngle = (((tangle dstate) + 90.0) / 360.0) * 2 * pi
+    let x = tx dstate
+    let y = ty dstate
     let fsteps = fromIntegral steps :: Float
     let x' = x + fsteps * cos radAngle * direction
     let y' = y + fsteps * sin radAngle * direction
@@ -74,12 +74,12 @@ moveTurtle steps' direction = do
     then do
       let line = drawLine (x,y) (x',y') (penColor tstate)
       let shapes' = line:(shapes tstate)
-      let tstate' = tstate { tx=x', ty=y', shapes=shapes' }
-      lput tstate'
+      let dstate' = dstate { tx=x', ty=y', shapes=shapes' }
+      lput (tstate',env)
       return TurtleUnit
     else do
-      let tstate' = tstate { tx=x', ty=y' }
-      lput tstate'
+      let dstate' = dstate { tx=x', ty=y' }
+      lput (dstate',env)
       return TurtleUnit
 
 turnTurtle :: TurtleExpr -> Float -> EitherT String (State TurtleState) TurtleValue
@@ -91,7 +91,7 @@ turnTurtle delta' direction = do
   then do
     failEitherT "Angle must be non-negative"
   else do
-    tstate <- lget
+    (tstate,_) <- lget
 
     let angle' = (tangle tstate) + (fromIntegral delta :: Float) * direction
     let tstate' = tstate { tangle=roundAngle angle' }
@@ -101,8 +101,8 @@ turnTurtle delta' direction = do
 
 -- interprets turtle langage commands (evals AST)
 -- this implements big-step operational semantics
-execTurtleCmd :: TurtleExpr -> EitherT String (State TurtleState) TurtleValue
-execTurtleCmd cmd = case cmd of
+execTurtleCmd :: TurtleEnv -> TurtleExpr -> EitherT String (State TurtleState) TurtleValue
+execTurtleCmd env cmd = case cmd of
   -- move turtle forward
   Forward steps -> do
     moveTurtle steps 1.0
@@ -127,7 +127,7 @@ execTurtleCmd cmd = case cmd of
     then do
       failEitherT "Radius must be non-negative"
     else do
-      tstate <- lget
+      (tstate,_) <- lget
       if pen tstate
       then do
         let c = CanvasCircle {
@@ -143,8 +143,8 @@ execTurtleCmd cmd = case cmd of
 
   -- turtle doesn't draw
   PenUp -> do
-    tstate <- lget
-    lput $ tstate { pen=False }
+    (dstate, env) <- lget
+    lput (dstate { pen=False }, env)
     return TurtleUnit
 
   -- turtle draws
@@ -231,9 +231,10 @@ execTurtleCmd cmd = case cmd of
     return TurtleUnit
 
   -- perform a sequence of commands
+  -- return the value of the last command
   Seq seq -> do
-    sequence $ map execTurtleCmd seq
-    return TurtleUnit
+    retlist <- sequence $ map execTurtleCmd seq
+    return $ last retlist
 
   -- loop over a sequence of commands
   Repeat n' seq -> do
@@ -255,6 +256,10 @@ execTurtleCmd cmd = case cmd of
       execTurtleCmd thenBranch
     else do
       execTurtleCmd elseBranch
+
+  Return retExpr -> do
+    retval <- execTurtleCmd retExpr
+    return retval
   
   Num n -> do
     return $ TurtleNum n
@@ -279,6 +284,17 @@ execTurtleCmd cmd = case cmd of
     let x = toTurtleNum retX
     let y = toTurtleNum retY
     return $ TurtleNum (x*y)
+
+  Div x' y' -> do
+    retX <- execTurtleCmd x'
+    retY <- execTurtleCmd y'
+    let x = toTurtleNum retX
+    let y = toTurtleNum retY
+    if y == 0
+    then do
+      failEitherT "Division by 0!"
+    else do
+      return $ TurtleNum (x `div` y)
 
   BoolTrue -> do
     return $ TurtleBool True
@@ -339,3 +355,6 @@ execTurtleCmd cmd = case cmd of
     let x = toTurtleNum retX
     let y = toTurtleNum retY
     return $ TurtleBool (x > y)
+
+  Var s -> do
+

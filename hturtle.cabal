@@ -10,7 +10,7 @@ license-file:        LICENSE
 author:              Rolph Recto
 maintainer:          rolph.recto@gmail.com
 -- copyright:           
--- category:            
+category:            Graphics
 build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
@@ -19,6 +19,6 @@ executable hturtle
   main-is:             HTurtle.hs
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8, random >=1.1 && <1.2, mtl >=2.1 && <2.2, tuple >=0.3 && <0.4, gloss >=1.9 && <1.10
+  build-depends:       base >=4.8 && <4.9, mtl >=2.2 && <2.3, MissingH >=1.3 && <1.4, parsec >=3.1 && <3.2, gloss >=1.9 && <1.10, random >=1.1 && <1.2, tuple >=0.3 && <0.4, containers >=0.5 && <0.6
   -- hs-source-dirs:      
   default-language:    Haskell2010
