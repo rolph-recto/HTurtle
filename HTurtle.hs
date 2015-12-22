@@ -1,57 +1,28 @@
 import System.IO
 import System.Random
+
 import Control.Monad.State
+
+import qualified Data.Map.Strict as M
 import Data.Tuple.Select
 import Data.String.Utils
-import EitherT
 
 import Graphics.Gloss.Interface.IO.Game hiding (color)
 
+import HLispExpr
+import HLispParse
+import HLispEval
+import HLispPrim
+
 import TurtleState
-import TurtleExpr
-import TurtleCmd
 import TurtleDraw
-
-runCmd :: TurtleState -> TurtleExpr -> IO TurtleState
-runCmd tstate cmd = do
-  -- type check the expression before executing it
-  case typeTurtle cmd of
-    Left err -> do
-      print err
-      return tstate
-    Right _ -> do
-      let (log, tstate') = runState (runEitherT (execTurtleCmd cmd)) tstate
-      case log of
-        Left err2 -> do
-          print err2
-          -- returning tstate instead of tstate' ensures that if the expr
-          -- causes a crash that the TurtleState is kept the same as
-          -- before the execution of the expression
-          -- alternatively, we can also return tstate', which will keep
-          -- the changes made to the TurtleState while executing the expr
-          -- prior to the crash
-          return tstate
-        Right _ -> do
-          return tstate'
-
-{-
-runCmdStr :: TurtleState -> String -> IO TurtleState
-runCmdStr tstate cmdstr = do
-  let parseResult = parseTurtle cmdstr
-  case parseResult of
-    Left parseErr -> do
-      print parseErr
-      return tstate
-    Right cmd -> do
-      let (log, tstate') = runState (execTurtleCmd cmd) tstate
-      let log' = strip log
-      if length log' > 0 then putStrLn log' else return ()
-      return tstate'
--}
+import TurtleCommands
 
 -- handle user input
 handleEvents :: Event -> TurtleState -> IO TurtleState
 handleEvents event tstate = case event of
+  _ -> return tstate
+{-
   EventKey (SpecialKey KeyUp) Down _ _ -> do
     let cmd = Forward (Num 10)
     tstate' <- runCmd tstate cmd
@@ -124,7 +95,29 @@ handleEvents event tstate = case event of
 
   _ -> do
     return tstate
+-}
 
+runCmd :: TurtleState -> String -> IO TurtleState
+runCmd tstate cmdstr = do
+  let parseResult = parseLisp cmdstr
+  case parseResult of
+    Left parseErr -> do
+      print parseErr
+      return tstate
+
+    Right expr -> do
+      (result, tstate') <- runLisp tstate expr
+      case result of
+        Left err -> do
+          putStrLn err
+          return tstate'
+
+        Right LispUnit -> do
+          return tstate'
+
+        Right val -> do
+          putStrLn (show val)
+          return tstate'
 
 fetchReplCmd :: IO (Maybe String)
 fetchReplCmd = do
@@ -140,13 +133,13 @@ stepLogo :: Float -> TurtleState -> IO TurtleState
 stepLogo _ tstate = do
   replcmd <- fetchReplCmd
   case replcmd of
-    -- need to implement parser first...
-    -- Just cmdstr -> runCmdStr tstate cmdstr
-    Just cmdstr -> return tstate
+    Just cmdstr -> runCmd tstate cmdstr
     Nothing -> return tstate
 
 -- initial config
-initTurtleState = TurtleState {
+initTurtleState = (dstate, globalEnv)
+  where globalEnv = registerPrimitives M.empty (primitives ++ turtleCommands)
+        dstate = DrawState {
                   tx = 0
                 , ty = 0
                 , tshow = True
@@ -160,6 +153,7 @@ initTurtleState = TurtleState {
 main = do
   -- adjust IO settings
   hSetBuffering stdin LineBuffering
+  hSetBuffering stdout NoBuffering
 
   putStrLn "HTurtle v0.1 by Rolph Recto"
   playIO
