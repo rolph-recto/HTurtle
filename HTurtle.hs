@@ -16,7 +16,7 @@ import HLispPrim
 
 import TurtleState
 import TurtleDraw
-import TurtleCommands
+import TurtleCommand
 
 -- handle user input
 handleEvents :: Event -> TurtleState -> IO TurtleState

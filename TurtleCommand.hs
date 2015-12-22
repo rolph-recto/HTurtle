@@ -1,4 +1,4 @@
-module TurtleCommands (turtleCommands) where
+module TurtleCommand (turtleCommands) where
 
 import Control.Monad.Except
 import Control.Monad.State
