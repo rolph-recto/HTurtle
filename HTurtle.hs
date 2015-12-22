@@ -1,9 +1,11 @@
 import System.IO
 import System.Random
+import System.Directory (doesFileExist)
 
 import Control.Monad.State
 
 import qualified Data.Map.Strict as M
+import Data.List (intercalate)
 import Data.Tuple.Select
 import Data.String.Utils
 
@@ -20,104 +22,135 @@ import TurtleCommand
 
 -- handle user input
 handleEvents :: Event -> TurtleState -> IO TurtleState
-handleEvents event tstate = case event of
-  _ -> return tstate
-{-
-  EventKey (SpecialKey KeyUp) Down _ _ -> do
-    let cmd = Forward (Num 10)
-    tstate' <- runCmd tstate cmd
+handleEvents event tstate@(dstate,env) = case event of
+  EventKey (SpecialKey KeyUp) _ _ _ -> do
+    tstate' <- runCmd tstate "[fd 10]"
     return tstate'
 
   EventKey (SpecialKey KeyDown) Down _ _ -> do
-    let cmd = Back (Num 10)
-    tstate' <- runCmd tstate cmd
+    tstate' <- runCmd tstate "[back 10]"
     return tstate'
 
   EventKey (SpecialKey KeyLeft) Down _ _ -> do
-    let cmd = TurnLeft (Num 10)
-    tstate' <- runCmd tstate cmd
+    tstate' <- runCmd tstate "[lt 10]"
     return tstate'
 
   EventKey (SpecialKey KeyRight) Down _ _ -> do
-    let cmd = TurnRight (Num 10)
-    tstate' <- runCmd tstate cmd
-    return tstate'
-
-  EventKey (Char '1') Down _ _ -> do
-    let cmd = Repeat (Num 36) [Repeat (Num 6) [PenColor (Num 150) (Num 150) (Num 150) (Num 255), DrawCircle (Num 100), PenColor (Num 255) (Num 255) (Num 255) (Num 255), Forward (Num 50), TurnRight (Num 60)], TurnRight (Num 10)]
-    let cmd2 = Repeat (Num 36) [Repeat (Num 6) [PenColor (Num 100) (Num 100) (Num 100) (Num 255), DrawCircle (Num 150), PenColor (Num 50) (Num 50) (Num 50) (Num 255), Forward (Num 100), TurnRight (Num 60)], TurnRight (Num 10)]
-    tstate' <- runCmd tstate $ Seq [cmd, cmd2]
-    return tstate'
-
-  EventKey (Char '2') Down _ _ -> do
-    let cmd = Seq [Seq [PenColor (Num 255) (Num 255) (Num 255) (Num 255), Repeat (Num 4) [TurnRight (Num 85), Forward (Num (5*i))]] | i <- [1..75]]
-    tstate' <- runCmd tstate cmd
-    return tstate'
-
-  EventKey (Char '3') Down _ _ -> do
-    let cmd = Seq [Seq [PenColor (Num (255-i*2)) (Num (255-i*2)) (Num (255-i*2)) (Num 255), Repeat (Num 3) [TurnRight (Num 110), Forward (Num (5*i))]] | i <- [1..100]]
-    tstate' <- runCmd tstate cmd
-    return tstate'
-
-  EventKey (Char '4') Down _ _ -> do
-    ccycle <- sequence $ take 4 $ repeat $ do
-      r <- getStdRandom $ randomR (0,255)
-      g <- getStdRandom $ randomR (0,255)
-      b <- getStdRandom $ randomR (0,255)
-      return (r,g,b)
-    let colors = take 201 $ cycle ccycle
-    let cmd = Seq [Seq [PenColor (Num $ sel1 (colors!!i)) (Num $ sel2 (colors!!i)) (Num $ sel3 (colors!!i)) (Num 255), TurnRight (Num 89), Forward (Num (2*i))] | i <- [1..200]]
-    tstate' <- runCmd tstate cmd
+    tstate' <- runCmd tstate "[rt 10]"
     return tstate'
 
   EventKey (Char 'q') Down _ _ -> do
-    let cmd = Seq [Clear, Home, PenColor (Num 255) (Num 255) (Num 255) (Num 255)]
-    tstate' <- runCmd tstate cmd
+    tstate' <- runCmd tstate "[[reset] [color 255 255 255 255]]"
     return tstate'
 
   EventKey (Char 's') Down _ _ -> do
-    if tshow tstate
+    if tshow dstate
     then do
-      tstate' <- runCmd tstate HideTurtle
+      tstate' <- runCmd tstate "[hide]"
       return tstate'
     else do
-      tstate' <- runCmd tstate ShowTurtle
+      tstate' <- runCmd tstate "[show]"
       return tstate'
 
   EventKey (SpecialKey KeySpace) Down _ _ -> do
-    if pen tstate
+    if pen dstate
     then do
-      tstate' <- runCmd tstate PenUp
+      tstate' <- runCmd tstate "[penup]"
       return tstate'
     else do
-      tstate' <- runCmd tstate PenDown
+      tstate' <- runCmd tstate "[pendown]"
       return tstate'
 
   _ -> do
     return tstate
--}
 
 runCmd :: TurtleState -> String -> IO TurtleState
-runCmd tstate cmdstr = do
-  let parseResult = parseLisp cmdstr
-  case parseResult of
-    Left parseErr -> do
-      print parseErr
-      return tstate
+runCmd tstate@(dstate,env) cmdstr = do
+  case words cmdstr of
+    -- repl commands
+    [] -> return tstate
+    
+    ("globals":_) -> do
+      let 
+      let userGlobals = filter isUserGlobal $ M.toList env
+      if length userGlobals > 0
+      then do
+        let userBinds = map fst userGlobals
+        putStr "User-defined globals: "
+        putStrLn $ intercalate " " userBinds
+        return tstate
 
-    Right expr -> do
-      (result, tstate') <- runLisp tstate expr
-      case result of
-        Left err -> do
-          putStrLn err
-          return tstate'
+      else do
+        putStrLn "No user-defined globals."
+        return tstate
 
-        Right LispUnit -> do
-          return tstate'
+    ("clearglobals":_) -> do
+      let env' = M.fromList $ filter (not . isUserGlobal) $ M.toList env
+      putStrLn "Removed all user-defined globals."
+      return (dstate, env')
 
-        Right val -> do
-          putStrLn (show val)
-          return tstate'
+    ("info":bind:_) -> do
+      case M.lookup bind env of
+        Just val -> do
+          putStrLn $ bind ++ " : " ++ (show val)
+          return tstate
+
+        Nothing -> do
+          putStrLn $ "No binding found for " ++ bind ++ "."
+          return tstate
+
+    ("load":file:_) -> do
+      fileExists <- doesFileExist file
+      if fileExists
+      then do
+        withFile file ReadMode $ \h -> do
+          filestr <- hGetContents h
+          case parseLispFile filestr of
+            Left err -> do
+              putStrLn $ show err
+              return tstate
+          
+            Right exprs -> do
+              let exprList = LispList exprs
+              (result, tstate') <- runLisp tstate exprList
+              case result of
+                Left err -> do
+                  putStrLn err
+                  return tstate'
+
+                Right _ -> do
+                  return tstate'
+
+        else do
+          putStrLn "File doesn't exist!"
+          return tstate
+
+    -- a lisp command
+    otherwise -> do
+      let parseResult = parseLisp cmdstr
+      case parseResult of
+        Left parseErr -> do
+          print parseErr
+          return tstate
+
+        Right expr -> do
+          (result, tstate') <- runLisp tstate expr
+          case result of
+            Left err -> do
+              putStrLn err
+              return tstate'
+
+            Right LispUnit -> do
+              return tstate'
+
+            Right val -> do
+              putStrLn (show val)
+              return tstate'
+
+  where isPrim (LispPrimFunc _ _) = True
+        isPrim _                  = False
+        isUserGlobal (key,val)    = not $ isPrim val
+
 
 fetchReplCmd :: IO (Maybe String)
 fetchReplCmd = do

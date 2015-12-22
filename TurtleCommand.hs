@@ -226,6 +226,20 @@ setColor env (r':g':b':a':_) = do
 
   where checkColor c = c >= 0 && c <= 255
 
+showTurtle :: PrimFunc DrawState
+showTurtle env args = do
+  (dstate, env) <- lift get 
+  let dstate' = dstate { tshow=True }
+  lift $ put (dstate', env)
+  return LispUnit
+
+hideTurtle :: PrimFunc DrawState
+hideTurtle env args = do
+  (dstate, env) <- lift get 
+  let dstate' = dstate { tshow=False }
+  lift $ put (dstate', env)
+  return LispUnit
+
 turtleCommands :: [(String, (Int, PrimFunc DrawState))]
 turtleCommands = [
   ("forward", (1, forward)),
@@ -236,6 +250,7 @@ turtleCommands = [
   ("rt", (1, right)),
   ("left", (1, left)),
   ("lt", (1, left)),
+  ("circle", (1, circle)),
   ("penup", (0, penUp)),
   ("pu", (0, penUp)),
   ("pendown", (0, penDown)),
@@ -249,6 +264,10 @@ turtleCommands = [
   ("reset", (0, reset)),
   ("color", (4, setColor)),
   ("pen", (4, setColor)),
-  ("pencolor", (4, setColor))]
+  ("pencolor", (4, setColor)),
+  ("showturtle", (0, showTurtle)),
+  ("show", (0, showTurtle)),
+  ("hideturtle", (0, hideTurtle)),
+  ("hide", (0, hideTurtle))]
 
 
