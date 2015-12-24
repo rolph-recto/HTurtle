@@ -27,15 +27,15 @@ handleEvents event tstate@(dstate,env) = case event of
     tstate' <- runCmd tstate "[fd 10]"
     return tstate'
 
-  EventKey (SpecialKey KeyDown) Down _ _ -> do
+  EventKey (SpecialKey KeyDown) _ _ _ -> do
     tstate' <- runCmd tstate "[back 10]"
     return tstate'
 
-  EventKey (SpecialKey KeyLeft) Down _ _ -> do
+  EventKey (SpecialKey KeyLeft) _ _ _ -> do
     tstate' <- runCmd tstate "[lt 10]"
     return tstate'
 
-  EventKey (SpecialKey KeyRight) Down _ _ -> do
+  EventKey (SpecialKey KeyRight) _ _ _ -> do
     tstate' <- runCmd tstate "[rt 10]"
     return tstate'
 
