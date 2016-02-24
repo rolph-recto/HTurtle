@@ -32,7 +32,7 @@ moveTurtle steps direction = do
     left "steps must be non-negative"
 
   else do
-    (dstate, env) <- lift get
+    dstate <- getUserState
   
     -- subtract 90 from angle since
     -- then convert to radians
@@ -49,12 +49,12 @@ moveTurtle steps direction = do
       let line = drawLine (x,y) (x',y') (penColor dstate)
       let shapes' = line:(shapes dstate)
       let dstate' = dstate { tx=x', ty=y', shapes=shapes' }
-      lift $ put (dstate', env)
+      putUserState dstate'
       return LispUnit
 
     else do
       let dstate' = dstate { tx=x', ty=y' }
-      lift $ put (dstate', env)
+      putUserState dstate'
       return LispUnit
 
 turnTurtle :: Int -> Float -> LispExec DrawState
@@ -64,11 +64,11 @@ turnTurtle delta direction = do
   then do
     left "Angle must be non-negative"
   else do
-    (dstate, env) <- lift get
+    dstate <- getUserState
 
     let angle' = (tangle dstate) + (fromIntegral delta :: Float) * direction
     let dstate' = dstate { tangle=roundAngle angle' }
-    lift $ put (dstate', env)
+    putUserState dstate'
     return LispUnit
 
 forward :: PrimFunc DrawState
@@ -108,7 +108,7 @@ circle env (rad:_) = do
       then do
         left "radius must be non-negative"
       else do
-        (dstate, env) <- lift get
+        dstate <- getUserState
         if pen dstate
         then do
           let c = CanvasCircle {
@@ -118,7 +118,7 @@ circle env (rad:_) = do
                   , color=penColor dstate
                   }
           let dstate' = dstate { shapes=c:(shapes dstate) }
-          lift $ put (dstate', env)
+          putUserState dstate'
           return LispUnit
 
         else do
@@ -126,16 +126,16 @@ circle env (rad:_) = do
 
 penUp :: PrimFunc DrawState
 penUp env args = do
-  (dstate, env) <- lift get
+  dstate <- getUserState
   let dstate' = dstate { pen=False }
-  lift $ put (dstate', env)
+  putUserState dstate'
   return LispUnit
 
 penDown :: PrimFunc DrawState
 penDown env args = do
-  (dstate, env) <- lift get
+  dstate <- getUserState
   let dstate' = dstate { pen=True }
-  lift $ put (dstate', env)
+  putUserState dstate'
   return LispUnit
 
 setX :: PrimFunc DrawState
@@ -143,9 +143,9 @@ setX env (x':_) = do
   xval <- eval env x'
   case xval of
     LispNum x -> do
-      (dstate, env) <- lift get
+      dstate <- getUserState
       let dstate' = dstate { tx=fromIntegral x :: Float }
-      lift $ put (dstate', env)
+      putUserState dstate'
       return LispUnit
   
     otherwise -> left "setX expects a num argument"
@@ -155,9 +155,9 @@ setY env (y':_) = do
   yval <- eval env y'
   case yval of
     LispNum y -> do
-      (dstate, env) <- lift get
+      dstate <- getUserState
       let dstate' = dstate { ty=fromIntegral y :: Float }
-      lift $ put (dstate', env)
+      putUserState dstate'
       return LispUnit
   
     otherwise -> left "setY expects a num argument"
@@ -168,9 +168,9 @@ setXY env (x':y':_) = do
   yval <- eval env y'
   case (xval, yval) of
     (LispNum x, LispNum y) -> do
-      (dstate, env) <- lift get
+      dstate <- getUserState
       let dstate' = dstate { tx=fromIntegral x :: Float, ty=fromIntegral y :: Float }
-      lift $ put (dstate', env)
+      putUserState dstate'
       return LispUnit
   
     otherwise -> left "setXY expects num arguments"
@@ -180,25 +180,25 @@ setAngle env (angle':_) = do
   angleVal <- eval env angle'
   case angleVal of
     LispNum angle -> do
-      (dstate, env) <- lift get
+      dstate <- getUserState
       let dstate' = dstate { tangle=roundAngle $ fromIntegral angle :: Float }
-      lift $ put (dstate', env)
+      putUserState dstate'
       return LispUnit
   
     otherwise -> left "setAngle expects a num argument"
 
 home :: PrimFunc DrawState
 home env args = do
-  (dstate, env) <- lift get
+  dstate <- getUserState
   let dstate' = dstate { tx=0.0, ty=0.0, tangle=0.0 }
-  lift $ put (dstate', env)
+  putUserState dstate'
   return LispUnit
 
 clear :: PrimFunc DrawState 
 clear env args = do
-  (dstate, env) <- lift get
+  dstate <- getUserState
   let dstate' = dstate { shapes=[] }
-  lift $ put (dstate', env)
+  putUserState dstate'
   return LispUnit
 
 reset :: PrimFunc DrawState
@@ -216,13 +216,13 @@ setColor env (r':g':b':a':_) = do
     (LispNum r, LispNum g, LispNum b, LispNum a) -> do
       if checkColor r && checkColor g && checkColor b && checkColor a
       then do
-        (dstate, env) <- lift get
+        dstate <- getUserState
         let (r',g',b',a') = (fromIntegral r/255 :: Float,
                              fromIntegral g/255 :: Float,
                              fromIntegral b/255 :: Float,
                              fromIntegral a/255 :: Float)
         let dstate' = dstate { penColor=makeColor r' g' b' a' }
-        lift $ put (dstate', env)
+        putUserState dstate'
         return LispUnit
 
       else left "color components must be between [0,255]"
@@ -233,16 +233,16 @@ setColor env (r':g':b':a':_) = do
 
 showTurtle :: PrimFunc DrawState
 showTurtle env args = do
-  (dstate, env) <- lift get 
+  dstate <- getUserState
   let dstate' = dstate { tshow=True }
-  lift $ put (dstate', env)
+  putUserState dstate'
   return LispUnit
 
 hideTurtle :: PrimFunc DrawState
 hideTurtle env args = do
-  (dstate, env) <- lift get 
+  dstate <- getUserState
   let dstate' = dstate { tshow=False }
-  lift $ put (dstate', env)
+  putUserState dstate'
   return LispUnit
 
 turtleCommands :: [(String, (Int, PrimFunc DrawState))]
