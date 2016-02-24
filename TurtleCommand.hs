@@ -1,9 +1,10 @@
 module TurtleCommand (turtleCommands) where
 
-import Control.Monad.Except
+-- import Control.Monad.Except
+import Control.Monad.Trans.Either
 import Control.Monad.State
 
-import Graphics.Gloss (Color, makeColorI)
+import Graphics.Gloss (Color, makeColor)
 
 import HLispExpr
 import HLispEval
@@ -28,7 +29,7 @@ moveTurtle :: Int -> Float -> LispExec DrawState
 moveTurtle steps direction = do
   if steps < 0
   then do
-    throwError "steps must be non-negative"
+    left "steps must be non-negative"
 
   else do
     (dstate, env) <- lift get
@@ -61,7 +62,7 @@ turnTurtle delta direction = do
   -- steps must be nonnegative
   if delta < 0
   then do
-    throwError "Angle must be non-negative"
+    left "Angle must be non-negative"
   else do
     (dstate, env) <- lift get
 
@@ -75,28 +76,28 @@ forward env (steps:_) = do
   stepVal <- eval env steps
   case stepVal of
     LispNum n -> moveTurtle n 1.0
-    otherwise -> throwError "forward expects a num argument"
+    otherwise -> left "forward expects a num argument"
 
 back :: PrimFunc DrawState
 back env (steps:_) = do
   stepVal <- eval env steps
   case stepVal of
     LispNum n -> moveTurtle n (-1.0)
-    otherwise -> throwError "back expects a num argument"
+    otherwise -> left "back expects a num argument"
 
-right :: PrimFunc DrawState
-right env (delta:_) = do
+turnRight :: PrimFunc DrawState
+turnRight env (delta:_) = do
   deltaVal <- eval env delta
   case deltaVal of
     LispNum n -> turnTurtle n (-1.0)
-    otherwise -> throwError "right expects a num argument"
+    otherwise -> left "right expects a num argument"
 
-left :: PrimFunc DrawState
-left env (delta:_) = do
+turnLeft :: PrimFunc DrawState
+turnLeft env (delta:_) = do
   deltaVal <- eval env delta
   case deltaVal of
     LispNum n -> turnTurtle n 1.0
-    otherwise -> throwError "left expects a num argument"
+    otherwise -> left "left expects a num argument"
 
 circle :: PrimFunc DrawState
 circle env (rad:_) = do
@@ -105,7 +106,7 @@ circle env (rad:_) = do
     LispNum r -> do
       if r < 0
       then do
-        throwError "radius must be non-negative"
+        left "radius must be non-negative"
       else do
         (dstate, env) <- lift get
         if pen dstate
@@ -147,7 +148,7 @@ setX env (x':_) = do
       lift $ put (dstate', env)
       return LispUnit
   
-    otherwise -> throwError "setX expects a num argument"
+    otherwise -> left "setX expects a num argument"
 
 setY :: PrimFunc DrawState
 setY env (y':_) = do
@@ -159,7 +160,7 @@ setY env (y':_) = do
       lift $ put (dstate', env)
       return LispUnit
   
-    otherwise -> throwError "setY expects a num argument"
+    otherwise -> left "setY expects a num argument"
 
 setXY :: PrimFunc DrawState
 setXY env (x':y':_) = do
@@ -172,7 +173,7 @@ setXY env (x':y':_) = do
       lift $ put (dstate', env)
       return LispUnit
   
-    otherwise -> throwError "setXY expects num arguments"
+    otherwise -> left "setXY expects num arguments"
 
 setAngle :: PrimFunc DrawState
 setAngle env (angle':_) = do
@@ -184,7 +185,7 @@ setAngle env (angle':_) = do
       lift $ put (dstate', env)
       return LispUnit
   
-    otherwise -> throwError "setAngle expects a num argument"
+    otherwise -> left "setAngle expects a num argument"
 
 home :: PrimFunc DrawState
 home env args = do
@@ -216,13 +217,17 @@ setColor env (r':g':b':a':_) = do
       if checkColor r && checkColor g && checkColor b && checkColor a
       then do
         (dstate, env) <- lift get
-        let dstate' = dstate { penColor=makeColorI r g b a }
+        let (r',g',b',a') = (fromIntegral r/255 :: Float,
+                             fromIntegral g/255 :: Float,
+                             fromIntegral b/255 :: Float,
+                             fromIntegral a/255 :: Float)
+        let dstate' = dstate { penColor=makeColor r' g' b' a' }
         lift $ put (dstate', env)
         return LispUnit
 
-      else throwError "color components must be between [0,255]"
+      else left "color components must be between [0,255]"
 
-    otherwise -> throwError "color takes in num arguments"
+    otherwise -> left "color takes in num arguments"
 
   where checkColor c = c >= 0 && c <= 255
 
@@ -246,10 +251,10 @@ turtleCommands = [
   ("fd", (1, forward)),
   ("back", (1, back)),
   ("bk", (1, back)),
-  ("right", (1, right)),
-  ("rt", (1, right)),
-  ("left", (1, left)),
-  ("lt", (1, left)),
+  ("right", (1, turnRight)),
+  ("rt", (1, turnRight)),
+  ("left", (1, turnLeft)),
+  ("lt", (1, turnLeft)),
   ("circle", (1, circle)),
   ("penup", (0, penUp)),
   ("pu", (0, penUp)),

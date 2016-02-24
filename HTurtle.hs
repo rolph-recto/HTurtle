@@ -7,7 +7,7 @@ import Control.Monad.State
 import qualified Data.Map.Strict as M
 import Data.List (intercalate)
 import Data.Tuple.Select
-import Data.String.Utils
+-- import Data.String.Utils
 
 import Graphics.Gloss.Interface.IO.Game hiding (color)
 
