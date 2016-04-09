@@ -5,6 +5,7 @@ module TurtleDraw (
 import Control.Monad.State
 import Graphics.Gloss.Interface.IO.Game hiding (color)
 
+import HLispExpr
 import TurtleState
 
 drawCanvasShape :: CanvasShape -> Picture
@@ -44,12 +45,12 @@ drawCanvas :: State TurtleState Picture
 drawCanvas = do
   (dstate, _) <- get
   shapes <- drawCanvasShapes
-  if tshow dstate
-  then do
-    turtle <- drawTurtle
-    return $ Pictures (shapes ++ turtle)
-  else
-    return $ Pictures shapes
+  turtle <- drawTurtle
+  let pic = if tshow dstate then Pictures (shapes ++ turtle) else Pictures shapes
+  -- apply camera transformations
+  let z = zoom dstate
+  let pic' = Translate (camx dstate) (camy dstate) $ Scale z z pic
+  return pic'
 
 -- drawing callback to playIO
 drawTurtleState :: TurtleState -> IO Picture

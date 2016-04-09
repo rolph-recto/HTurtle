@@ -20,6 +20,11 @@ import TurtleState
 import TurtleDraw
 import TurtleCommand
 
+-- settings
+windowWidth = 600 :: Int
+windowHeight = 600 :: Int
+zoomSpeed = 0.1
+
 -- handle user input
 handleEvents :: Event -> TurtleState -> IO TurtleState
 handleEvents event tstate@(dstate,env) = case event of
@@ -60,6 +65,54 @@ handleEvents event tstate@(dstate,env) = case event of
     else do
       tstate' <- runCmd tstate "[pendown]"
       return tstate'
+
+  EventKey (Char 'z') Down _ _ -> do
+    let z = zoom dstate
+    let z' = if z - zoomSpeed < 0.0 then 0.0 else z - zoomSpeed
+    return (dstate { zoom = z' }, env)
+
+  EventKey (Char 'x') Down _ _ -> do
+    let z = zoom dstate
+    let z' = z + zoomSpeed
+    return (dstate { zoom = z' }, env)
+
+  EventKey (MouseButton LeftButton) Down _ (mx,my) -> do
+    return (dstate { camActive = True, lastx = mx, lasty = my}, env)
+
+  EventKey (MouseButton LeftButton) Up _ _ -> do
+    return (dstate { camActive = False }, env)
+
+  EventKey (MouseButton RightButton) Down _ (mx,my) -> do
+    return (dstate { zoomActive = True, lastx = mx, lasty = my}, env)
+
+  EventKey (MouseButton RightButton) Up _ _ -> do
+    return (dstate { zoomActive = False }, env)
+
+  EventMotion (mx,my) -> do
+    if camActive dstate
+    then do
+      let dx = mx - (lastx dstate)
+      let dy = my - (lasty dstate)
+      let camx' = (camx dstate) - dx
+      let camy' = (camy dstate) - dy
+      let dstate' = dstate { camx = camx', camy = camy', lastx = mx, lasty = my }
+      return (dstate', env)
+    else if zoomActive dstate
+      then do
+      let (x,y) = (lastx dstate, lasty dstate)
+      -- distance from origin
+      let r = sqrt (x*x + y*y)
+      let r' = sqrt (mx*mx + my*my)
+      let dz = (r-r') / ((fromIntegral windowWidth)/4.0)
+      let z = if (zoom dstate) - dz < 0.0 then 0.0 else (zoom dstate) - dz
+      print dz
+      print z
+      return (dstate { zoom = z }, env)
+
+
+
+        
+      else return tstate
 
   _ -> do
     return tstate
@@ -181,6 +234,13 @@ initTurtleState = (dstate, globalEnv)
                 , pen = True
                 , penColor = white
                 , shapes = []
+                , zoom = 1.0
+                , camx = 0
+                , camy = 0
+                , camActive = False
+                , zoomActive = False
+                , lastx = 0.0
+                , lasty = 0.0
                 }
 
 main = do
@@ -190,7 +250,7 @@ main = do
 
   putStrLn "HTurtle v0.1 by Rolph Recto"
   playIO
-    (InWindow "HTurtle" (600, 600) (100, 100))
+    (InWindow "HTurtle" (windowWidth, windowHeight) (0, 0))
     black         -- background color
     30            -- simulation steps per minute
     initTurtleState

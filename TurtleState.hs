@@ -33,6 +33,14 @@ data DrawState = DrawState {
                   , pen :: Bool
                   , penColor :: Color
                   , shapes :: [CanvasShape]
+                  , zoom :: Float -- zoom factor of canvas
+                  , camx :: Float -- camera position
+                  , camy :: Float
+                  -- camActive and zoomActive should be mutually exclusive
+                  , camActive :: Bool -- is mouse translating camera?
+                  , zoomActive :: Bool -- is mouse zooming camera?
+                  , lastx :: Float
+                  , lasty :: Float
                   }
                   deriving (Show)
 
