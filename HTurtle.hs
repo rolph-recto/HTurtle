@@ -19,11 +19,27 @@ import HLispPrim
 import TurtleState
 import TurtleDraw
 import TurtleCommand
+import LSystem
 
 -- settings
 windowWidth = 600 :: Int
 windowHeight = 600 :: Int
 zoomSpeed = 0.1
+
+-- sierpisnki triangle commands
+-- generate lisp commands
+
+cmdA :: State () String
+cmdA = return "[fd 20]"
+
+cmdB :: State () String
+cmdB = return "[fd 20]"
+
+cmdPlus :: State () String
+cmdPlus = return "[left 60]"
+
+cmdMinus :: State () String
+cmdMinus = return "[right 60]"
 
 -- handle user input
 handleEvents :: Event -> TurtleState -> IO TurtleState
@@ -56,6 +72,17 @@ handleEvents event tstate@(dstate,env) = case event of
     else do
       tstate' <- runCmd tstate "[show]"
       return tstate'
+
+  EventKey (Char 't') Down _ _ -> do
+    let a = S 'A'
+    let b = S 'B'
+    let plus = S '+'
+    let minus = S '-'
+    let rules = [(a,[plus,b,minus,a,minus,b,plus]),(b,[minus,a,plus,b,plus,a,minus])]
+    let sierpinski = LS { axiom = [a], rules = (M.fromList rules) }
+    let cmds = M.fromList [(a,cmdA), (b,cmdB), (plus,cmdPlus), (minus,cmdMinus)]
+    let drawcmds = evalState (evalLSystem 8 cmds sierpinski) ()
+    foldM runCmd tstate drawcmds
 
   EventKey (SpecialKey KeySpace) Down _ _ -> do
     if pen dstate
@@ -105,13 +132,7 @@ handleEvents event tstate@(dstate,env) = case event of
       let r' = sqrt (mx*mx + my*my)
       let dz = (r-r') / ((fromIntegral windowWidth)/4.0)
       let z = if (zoom dstate) - dz < 0.0 then 0.0 else (zoom dstate) - dz
-      print dz
-      print z
       return (dstate { zoom = z }, env)
-
-
-
-        
       else return tstate
 
   _ -> do
