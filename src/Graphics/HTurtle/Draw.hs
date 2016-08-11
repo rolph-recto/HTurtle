@@ -1,12 +1,13 @@
-module TurtleDraw (
+module Graphics.HTurtle.Draw (
   drawTurtleState
 ) where
 
 import Control.Monad.State
 import Graphics.Gloss.Interface.IO.Game hiding (color)
 
-import HLispExpr
-import TurtleState
+import Language.HLisp.Expr
+
+import Graphics.HTurtle.State
 
 drawCanvasShape :: CanvasShape -> Picture
 drawCanvasShape shape =
@@ -15,6 +16,8 @@ drawCanvasShape shape =
       Color color $ Line [(x1,y1), (x2,y2)]
     CanvasCircle rad cx cy color ->
       Color color $ Translate cx cy $ Circle rad
+    CanvasArc rad cx cy arcStart arcEnd arcRot color ->
+      Color color $ Translate cx cy $ Rotate arcRot $ Arc arcStart arcEnd rad
 
 -- draw all shapes in the canvas
 drawCanvasShapes :: State TurtleState [Picture]

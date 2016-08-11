@@ -64,5 +64,5 @@
 ]]]
 
 [set draw5 [fun [] [
-  [repeat 18 [[repeat 6 [[fd 100] [rt 60]]] [rt 20]]]
+  [repeat 18 [[repeat 6 [[color [random 0 255] [random 0 255] [random 0 255] 255] [fd 100] [rt 60]]] [rt 20]]]
 ]]]

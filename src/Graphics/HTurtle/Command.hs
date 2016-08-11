@@ -1,16 +1,15 @@
-module TurtleCommand (turtleCommands) where
+module Graphics.HTurtle.Command (turtleCommands) where
 
--- import Control.Monad.Except
-import Control.Monad.Trans.Either
+import Control.Monad.Except
 import Control.Monad.State
 
 import Graphics.Gloss (Color, makeColor)
 
-import HLispExpr
-import HLispEval
+import Language.HLisp.Expr
+import Language.HLisp.Eval
 
-import TurtleState
-import TurtleDraw
+import Graphics.HTurtle.State
+import Graphics.HTurtle.Draw
 
 -- draw a line (duh)
 drawLine :: (Float, Float) -> (Float, Float) -> Color -> CanvasShape
@@ -29,7 +28,7 @@ moveTurtle :: Int -> Float -> LispExec DrawState
 moveTurtle steps direction = do
   if steps < 0
   then do
-    left "steps must be non-negative"
+    throwError "steps must be non-negative"
 
   else do
     dstate <- getUserState
@@ -62,7 +61,7 @@ turnTurtle delta direction = do
   -- steps must be nonnegative
   if delta < 0
   then do
-    left "Angle must be non-negative"
+    throwError "Angle must be non-negative"
   else do
     dstate <- getUserState
 
@@ -76,28 +75,28 @@ forward env (steps:_) = do
   stepVal <- eval env steps
   case stepVal of
     LispNum n -> moveTurtle n 1.0
-    otherwise -> left "forward expects a num argument"
+    otherwise -> throwError "forward expects a num argument"
 
 back :: PrimFunc DrawState
 back env (steps:_) = do
   stepVal <- eval env steps
   case stepVal of
     LispNum n -> moveTurtle n (-1.0)
-    otherwise -> left "back expects a num argument"
+    otherwise -> throwError "back expects a num argument"
 
 turnRight :: PrimFunc DrawState
 turnRight env (delta:_) = do
   deltaVal <- eval env delta
   case deltaVal of
     LispNum n -> turnTurtle n (-1.0)
-    otherwise -> left "right expects a num argument"
+    otherwise -> throwError "right expects a num argument"
 
 turnLeft :: PrimFunc DrawState
 turnLeft env (delta:_) = do
   deltaVal <- eval env delta
   case deltaVal of
     LispNum n -> turnTurtle n 1.0
-    otherwise -> left "left expects a num argument"
+    otherwise -> throwError "throwError expects a num argument"
 
 circle :: PrimFunc DrawState
 circle env (rad:_) = do
@@ -106,7 +105,7 @@ circle env (rad:_) = do
     LispNum r -> do
       if r < 0
       then do
-        left "radius must be non-negative"
+        throwError "radius must be non-negative"
       else do
         dstate <- getUserState
         if pen dstate
@@ -116,6 +115,36 @@ circle env (rad:_) = do
                   , cx=tx dstate
                   , cy=ty dstate
                   , color=penColor dstate
+                  }
+          let dstate' = dstate { shapes=c:(shapes dstate) }
+          putUserState dstate'
+          return LispUnit
+
+        else do
+          return LispUnit
+
+arc :: PrimFunc DrawState
+arc env (rad:s:t:_) = do
+  radVal <- eval env rad
+  sval <- eval env s
+  tval <- eval env t
+  case (radVal,sval,tval) of
+    (LispNum r, LispNum s', LispNum t') -> do
+      if r < 0
+      then do
+        throwError "radius must be non-negative"
+      else do
+        dstate <- getUserState
+        if pen dstate
+        then do
+          let c = CanvasArc {
+                    rad = fromIntegral r :: Float
+                  , cx = tx dstate
+                  , cy = ty dstate
+                  , arcStart = fromIntegral s' :: Float
+                  , arcEnd = fromIntegral t' :: Float
+                  , arcRot = tangle dstate
+                  , color = penColor dstate
                   }
           let dstate' = dstate { shapes=c:(shapes dstate) }
           putUserState dstate'
@@ -148,7 +177,7 @@ setX env (x':_) = do
       putUserState dstate'
       return LispUnit
   
-    otherwise -> left "setX expects a num argument"
+    otherwise -> throwError "setX expects a num argument"
 
 setY :: PrimFunc DrawState
 setY env (y':_) = do
@@ -160,7 +189,7 @@ setY env (y':_) = do
       putUserState dstate'
       return LispUnit
   
-    otherwise -> left "setY expects a num argument"
+    otherwise -> throwError "setY expects a num argument"
 
 setXY :: PrimFunc DrawState
 setXY env (x':y':_) = do
@@ -173,7 +202,7 @@ setXY env (x':y':_) = do
       putUserState dstate'
       return LispUnit
   
-    otherwise -> left "setXY expects num arguments"
+    otherwise -> throwError "setXY expects num arguments"
 
 setAngle :: PrimFunc DrawState
 setAngle env (angle':_) = do
@@ -185,7 +214,7 @@ setAngle env (angle':_) = do
       putUserState dstate'
       return LispUnit
   
-    otherwise -> left "setAngle expects a num argument"
+    otherwise -> throwError "setAngle expects a num argument"
 
 home :: PrimFunc DrawState
 home env args = do
@@ -225,9 +254,9 @@ setColor env (r':g':b':a':_) = do
         putUserState dstate'
         return LispUnit
 
-      else left "color components must be between [0,255]"
+      else throwError "color components must be between [0,255]"
 
-    otherwise -> left "color takes in num arguments"
+    otherwise -> throwError "color takes in num arguments"
 
   where checkColor c = c >= 0 && c <= 255
 
@@ -256,6 +285,7 @@ turtleCommands = [
   ("left", (1, turnLeft)),
   ("lt", (1, turnLeft)),
   ("circle", (1, circle)),
+  ("arc", (3, arc)),
   ("penup", (0, penUp)),
   ("pu", (0, penUp)),
   ("pendown", (0, penDown)),

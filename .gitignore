@@ -2,5 +2,4 @@
 *.ho
 *.o
 *.hi
-dist/*
-.cabal-sandbox/
+.stack-work/

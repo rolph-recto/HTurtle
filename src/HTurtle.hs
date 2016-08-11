@@ -7,39 +7,61 @@ import Control.Monad.State
 import qualified Data.Map.Strict as M
 import Data.List (intercalate)
 import Data.Tuple.Select
--- import Data.String.Utils
+import Data.Maybe
 
 import Graphics.Gloss.Interface.IO.Game hiding (color)
 
-import HLispExpr
-import HLispParse
-import HLispEval
-import HLispPrim
+import Language.HLisp.Expr
+import Language.HLisp.Parse
+import Language.HLisp.Eval
+import Language.HLisp.Prim
 
-import TurtleState
-import TurtleDraw
-import TurtleCommand
-import LSystem
+import Graphics.HTurtle.State
+import Graphics.HTurtle.Draw
+import Graphics.HTurtle.Command
+import Graphics.HTurtle.LSystem
 
 -- settings
 windowWidth = 600 :: Int
 windowHeight = 600 :: Int
-zoomSpeed = 0.1
+zoomSpeed = 0.02
 
 -- sierpisnki triangle commands
 -- generate lisp commands
 
 cmdA :: State () String
-cmdA = return "[fd 20]"
+cmdA = return "[[arc 10 0 45] [penup] [fd 10] [pendown]]"
 
 cmdB :: State () String
-cmdB = return "[fd 20]"
+cmdB = return "[[arc 10 0 45] [penup] [fd 10] [pendown]]"
 
 cmdPlus :: State () String
 cmdPlus = return "[left 60]"
 
 cmdMinus :: State () String
 cmdMinus = return "[right 60]"
+
+-- dragon curve commands
+cmdX :: State () (Maybe String)
+cmdX = return $ Just "[color [random 0 255] [random 0 255] [random 0 255] 255]"
+
+cmdY :: State () (Maybe String)
+cmdY = return $ Just "[color [random 0 255] [random 0 255] [random 0 255] 255]"
+
+cmdF :: State () (Maybe String)
+cmdF = return $ Just "[[arc 10 0 45] [penup] [fd 10] [pendown]]"
+
+cmdP :: State () (Maybe String)
+cmdP = return $ Just "[rt 90]"
+
+cmdM :: State () (Maybe String)
+cmdM = return $ Just "[lt 90]"
+
+zoomIn :: Float -> Float
+zoomIn z = z + zoomSpeed
+
+zoomOut :: Float -> Float
+zoomOut z = if z - zoomSpeed < 0 then 0 else z - zoomSpeed
 
 -- handle user input
 handleEvents :: Event -> TurtleState -> IO TurtleState
@@ -74,14 +96,22 @@ handleEvents event tstate@(dstate,env) = case event of
       return tstate'
 
   EventKey (Char 't') Down _ _ -> do
-    let a = S 'A'
-    let b = S 'B'
-    let plus = S '+'
-    let minus = S '-'
+    let a = 'A'
+    let b = 'B'
+    let plus = '+'
+    let minus = '-'
     let rules = [(a,[plus,b,minus,a,minus,b,plus]),(b,[minus,a,plus,b,plus,a,minus])]
     let sierpinski = LS { axiom = [a], rules = (M.fromList rules) }
     let cmds = M.fromList [(a,cmdA), (b,cmdB), (plus,cmdPlus), (minus,cmdMinus)]
-    let drawcmds = evalState (evalLSystem 8 cmds sierpinski) ()
+    let (term,result) = evalLSystem 8 cmds () sierpinski
+    foldM runCmd tstate result
+
+  EventKey (Char 'd') Down _ _ -> do
+    let rules = [('X',"X+YF+"),('Y',"-FX-Y")]
+    let dragon = LS { axiom = "FX", rules = M.fromList rules }
+    let cmds = M.fromList [('F',cmdF),('X',cmdX),('Y',cmdY),('+',cmdP),('-',cmdM)]
+    let (term, result) = evalLSystem 12 cmds () dragon
+    let drawcmds = catMaybes result
     foldM runCmd tstate drawcmds
 
   EventKey (SpecialKey KeySpace) Down _ _ -> do
@@ -94,14 +124,16 @@ handleEvents event tstate@(dstate,env) = case event of
       return tstate'
 
   EventKey (Char 'z') Down _ _ -> do
-    let z = zoom dstate
-    let z' = if z - zoomSpeed < 0.0 then 0.0 else z - zoomSpeed
-    return (dstate { zoom = z' }, env)
+    return (dstate { zoomPress = ZoomIn }, env)
+
+  EventKey (Char 'z') Up _ _ -> do
+    return (dstate { zoomPress = NoZoom }, env)
 
   EventKey (Char 'x') Down _ _ -> do
-    let z = zoom dstate
-    let z' = z + zoomSpeed
-    return (dstate { zoom = z' }, env)
+    return (dstate { zoomPress = ZoomOut }, env)
+
+  EventKey (Char 'x') Up _ _ -> do
+    return (dstate { zoomPress = NoZoom }, env)
 
   EventKey (MouseButton LeftButton) Down _ (mx,my) -> do
     return (dstate { camActive = True, lastx = mx, lasty = my}, env)
@@ -130,7 +162,7 @@ handleEvents event tstate@(dstate,env) = case event of
       -- distance from origin
       let r = sqrt (x*x + y*y)
       let r' = sqrt (mx*mx + my*my)
-      let dz = (r-r') / ((fromIntegral windowWidth)/4.0)
+      let dz = (r-r') / ((fromIntegral windowWidth)/8.0)
       let z = if (zoom dstate) - dz < 0.0 then 0.0 else (zoom dstate) - dz
       return (dstate { zoom = z }, env)
       else return tstate
@@ -235,13 +267,20 @@ fetchReplCmd = do
       return $ Just cmdstr
     else return Nothing
 
+updateZoom :: TurtleState -> TurtleState
+updateZoom (dstate,env)
+  | NoZoom <- zoomPress dstate  = (dstate,env)
+  | ZoomIn <- zoomPress dstate  = (dstate { zoom = zoomIn (zoom dstate) }, env)
+  | ZoomOut <- zoomPress dstate = (dstate { zoom = zoomOut (zoom dstate) }, env)
+
 -- step logo
 stepLogo :: Float -> TurtleState -> IO TurtleState
 stepLogo _ tstate = do
+  let tstate' = updateZoom tstate
   replcmd <- fetchReplCmd
   case replcmd of
-    Just cmdstr -> runCmd tstate cmdstr
-    Nothing -> return tstate
+    Just cmdstr -> runCmd tstate' cmdstr
+    Nothing -> return tstate'
 
 -- initial config
 initTurtleState = (dstate, globalEnv)
@@ -260,6 +299,7 @@ initTurtleState = (dstate, globalEnv)
                 , camy = 0
                 , camActive = False
                 , zoomActive = False
+                , zoomPress = NoZoom
                 , lastx = 0.0
                 , lasty = 0.0
                 }

@@ -1,0 +1,11 @@
+flags: {}
+extra-package-dbs: []
+packages:
+- '.'
+- location: ../hlisp
+  extra-dep: true
+extra-deps:
+- gloss-1.10.2.3
+- gloss-rendering-1.10.3.3
+- text-1.2.2.1
+resolver: lts-6.0

@@ -1,11 +1,13 @@
-module TurtleState (
+module Graphics.HTurtle.State (
   DrawState(..), CanvasShape(..),
-  TurtleState
+  ZoomPress(..), TurtleState
 ) where
 
 import Graphics.Gloss.Interface.IO.Game hiding (color)
 
-import HLispExpr
+import Language.HLisp.Expr
+
+data ZoomPress = NoZoom | ZoomIn | ZoomOut deriving (Show)
 
 -- stuff that can be draw to the screen
 data CanvasShape = CanvasLine {
@@ -19,6 +21,15 @@ data CanvasShape = CanvasLine {
                   rad :: Float -- radius
                 , cx :: Float -- x coord of center
                 , cy :: Float -- y coord of center
+                , color :: Color
+                }
+                | CanvasArc {
+                  rad :: Float
+                , cx :: Float
+                , cy :: Float
+                , arcStart :: Float -- initial angle
+                , arcEnd :: Float  -- terminal angle
+                , arcRot :: Float
                 , color :: Color
                 }
                 deriving (Show)
@@ -39,6 +50,7 @@ data DrawState = DrawState {
                   -- camActive and zoomActive should be mutually exclusive
                   , camActive :: Bool -- is mouse translating camera?
                   , zoomActive :: Bool -- is mouse zooming camera?
+                  , zoomPress :: ZoomPress -- is zoom key being pressed?
                   , lastx :: Float
                   , lasty :: Float
                   }
